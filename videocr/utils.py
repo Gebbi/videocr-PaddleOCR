@@ -15,10 +15,14 @@ def get_frame_index(time_str: str, fps: float):
     return index
 
 
-# convert frame index into SRT timestamp
-def get_srt_timestamp(frame_index: int, fps: float):
+# convert frame index into SRT/ASS timestamp
+def get_timestamp(frame_index: int, fps: float, ass: bool):
     td = datetime.timedelta(seconds=frame_index / fps)
     ms = td.microseconds // 1000
+    ms_ass = round(ms/10)
     m, s = divmod(td.seconds, 60)
     h, m = divmod(m, 60)
-    return '{:02d}:{:02d}:{:02d},{:03d}'.format(h, m, s, ms)
+    if ass:
+        return '{:01d}:{:02d}:{:02d}.{:02d}'.format(h, m, s, ms_ass)
+    else:
+        return '{:02d}:{:02d}:{:02d},{:03d}'.format(h, m, s, ms)

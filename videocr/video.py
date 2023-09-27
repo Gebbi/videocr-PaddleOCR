@@ -2,11 +2,13 @@ from __future__ import annotations
 from typing import List
 import cv2
 import numpy as np
+import os
 
 from . import utils
 from .models import PredictedFrames, PredictedSubtitle
 from .opencv_adapter import Capture
 from paddleocr import PaddleOCR
+import ass
 
 
 class Video:
@@ -60,6 +62,7 @@ class Video:
             predicted_frames = None
             modulo = frames_to_skip + 1
             for i in range(num_ocr_frames):
+                print(f"Frame #{i}")
                 if i % modulo == 0:
                     frame = v.read()[1]
                     if not self.use_fullframe:
@@ -89,15 +92,25 @@ class Video:
                     v.read()
         
 
-    def get_subtitles(self, sim_threshold: int) -> str:
+    def get_subtitles(self, sim_threshold: int, ass_out: bool, ass_base: str) -> str:
         self._generate_subtitles(sim_threshold)
-        return ''.join(
-            '{}\n{} --> {}\n{}\n\n'.format(
-                i,
-                utils.get_srt_timestamp(sub.index_start, self.fps),
-                utils.get_srt_timestamp(sub.index_end, self.fps),
-                sub.text)
-            for i, sub in enumerate(self.pred_subs))
+        if ass_out:
+            with open(ass_base, encoding='utf_8_sig') as f:
+                doc = ass.parse(f)
+            for i, sub in enumerate(self.pred_subs):
+                doc.events.add_line('dialogue', '0,{},{},Default,,0,0,0,,{}'.format(
+                    utils.get_timestamp(sub.index_start, self.fps, True),
+                    utils.get_timestamp(sub.index_end, self.fps, True),
+                    sub.text))
+            return doc
+        else:
+            return ''.join(
+                '{}\n{} --> {}\n{}\n\n'.format(
+                    i,
+                    utils.get_timestamp(sub.index_start, self.fps, False),
+                    utils.get_timestamp(sub.index_end, self.fps, False),
+                    sub.text)
+                for i, sub in enumerate(self.pred_subs))
 
     def _generate_subtitles(self, sim_threshold: int) -> None:
         self.pred_subs = []
