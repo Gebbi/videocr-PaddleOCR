@@ -19,6 +19,7 @@ class Video:
     rec_model_dir: str
     num_frames: int
     fps: float
+    width: int
     height: int
     ocr: PaddleOCR
     pred_frames: List[PredictedFrames]
@@ -31,6 +32,7 @@ class Video:
         with Capture(path) as v:
             self.num_frames = int(v.get(cv2.CAP_PROP_FRAME_COUNT))
             self.fps = v.get(cv2.CAP_PROP_FPS)
+            self.width = int(v.get(cv2.CAP_PROP_FRAME_WIDTH))
             self.height = int(v.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def run_ocr(self, use_gpu: bool, lang: str, time_start: str, time_end: str,
@@ -97,11 +99,27 @@ class Video:
         if ass_out:
             with open(ass_base, encoding='utf_8_sig') as f:
                 doc = ass.parse(f)
+
+            ass_width = doc.info['PlayResX']
+            ass_height = doc.info['PlayResY']
+
             for i, sub in enumerate(self.pred_subs):
-                doc.events.add_line('dialogue', '0,{},{},Default,,0,0,0,,{}'.format(
+                pos = ""
+                if sub.pos_max_y > self.height - self.height * 0.15:
+                    line_type = 'dialogue'
+                    line_style = 'Default'
+                elif sub.pos_min_y < self.height * 0.15:
+                    line_type = 'dialogue'
+                    line_style = 'Top'
+                else:
+                    line_type = 'comment'
+                    line_style = 'Sign'
+                    pos = f"{{\\pos({sub.pos_x*(ass_width/self.width)},{sub.pos_y*(ass_height/self.height)})}}"
+                doc.events.add_line(line_type, '0,{},{},{},,0,0,0,,{}{}'.format(
                     utils.get_timestamp(sub.index_start, self.fps, True),
                     utils.get_timestamp(sub.index_end, self.fps, True),
-                    sub.text))
+                    line_style,
+                    pos, sub.text)+f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}")
             return doc
         else:
             return ''.join(

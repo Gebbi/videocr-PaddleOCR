@@ -17,6 +17,12 @@ class PredictedFrames:
     words: List[PredictedText]
     confidence: float  # total confidence of all words
     text: str
+    pos_min_x = None
+    pos_max_x = None
+    pos_min_y = None
+    pos_max_y = None
+    pos_x = None
+    pos_y = None
 
     def __init__(self, index: int, pred_data: list[list], conf_threshold: float):
         self.start_index = index
@@ -34,19 +40,34 @@ class PredictedFrames:
             text = l[1][0]
             conf = l[1][1]
 
+            # set pos data
+            max_x = max(bounding_box[0][0], bounding_box[1][0], bounding_box[2][0], bounding_box[3][0])
+            min_x = min(bounding_box[0][0], bounding_box[1][0], bounding_box[2][0], bounding_box[3][0])
+            max_y = max(bounding_box[0][1], bounding_box[1][1], bounding_box[2][1], bounding_box[3][1])
+            min_y = min(bounding_box[0][1], bounding_box[1][1], bounding_box[2][1], bounding_box[3][1])
+
+            if self.pos_max_x is None or self.pos_max_x > max_x:
+                self.pos_max_x = max_x
+            if self.pos_min_x is None or self.pos_min_x > min_x:
+                self.pos_min_x = min_x
+            if self.pos_max_y is None or self.pos_max_y > max_y:
+                self.pos_max_y = max_y
+            if self.pos_min_y is None or self.pos_min_y > min_y:
+                self.pos_min_y = min_y
+
+            self.pos_x = (self.pos_min_x + self.pos_max_x)/2
+            self.pos_y = (self.pos_min_y + self.pos_max_y)/2
+
             # word predictions with low confidence will be filtered out
             if conf >= conf_threshold:
                 total_conf += conf
                 word_count += 1
 
                 # add word to current line or create a new line
-                max_y = max(bounding_box[0][1], bounding_box[1][1], bounding_box[2][1], bounding_box[3][1])
-
                 if current_line_max_y is None:
                     current_line_max_y = max_y
                     current_line.append(PredictedText(bounding_box, conf, text))
                 else:
-                    min_y = min(bounding_box[0][1], bounding_box[1][1], bounding_box[2][1], bounding_box[3][1])
                     height = max_y - min_y
                     height_overlap_allowance = height * 0.1
                     if min_y >= current_line_max_y - height_overlap_allowance: # new line
@@ -77,6 +98,10 @@ class PredictedSubtitle:
     frames: List[PredictedFrames]
     sim_threshold: int
     text: str
+    pos_min_y: int
+    pos_max_y: int
+    pos_x: int
+    pos_y: int
 
     def __init__(self, frames: List[PredictedFrames], sim_threshold: int):
         self.frames = [f for f in frames if f.confidence > 0]
@@ -85,6 +110,10 @@ class PredictedSubtitle:
 
         if self.frames:
             self.text = max(self.frames, key=lambda f: f.confidence).text
+            self.pos_min_y = max(self.frames, key=lambda f: f.confidence).pos_min_y
+            self.pos_max_y = max(self.frames, key=lambda f: f.confidence).pos_max_y
+            self.pos_x = max(self.frames, key=lambda f: f.confidence).pos_x
+            self.pos_y = max(self.frames, key=lambda f: f.confidence).pos_y
         else:
             self.text = ''
 
