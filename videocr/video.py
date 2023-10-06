@@ -2,7 +2,9 @@ from __future__ import annotations
 from typing import List
 import cv2
 import numpy as np
+import subprocess as sp
 import os
+import re
 
 from . import utils
 from .models import PredictedFrames, PredictedSubtitle
@@ -63,6 +65,7 @@ class Video:
             prev_grey = None
             predicted_frames = None
             modulo = frames_to_skip + 1
+            last_init = 0
             for i in range(num_ocr_frames):
                 print(f"Frame #{i}")
                 if i % modulo == 0:
@@ -88,7 +91,16 @@ class Video:
 
                         prev_grey = grey
 
-                    predicted_frames = PredictedFrames(i + ocr_start, ocr.ocr(frame), conf_threshold_percent)
+                    # check GPU memory every 500 frames, flush if 90 % full
+                    if (use_gpu == True) and (i > last_init + 500):
+                        gpu_state = sp.check_output(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv"], text=True)
+                        mem = re.findall(r'(\d+) MiB', gpu_state)
+                        if int(mem[0]) > int(mem[1]) * 0.9:
+                            ocr = None
+                            ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu)
+                        last_init = i
+                    
+                    predicted_frames = PredictedFrames(i + ocr_start, ocr.ocr(frame, cls=False), conf_threshold_percent)
                     self.pred_frames.append(predicted_frames)
                 else:
                     v.read()
