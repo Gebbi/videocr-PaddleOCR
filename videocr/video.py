@@ -83,7 +83,10 @@ class Video:
                         frame = cv2.bitwise_and(frame, frame, mask=cv2.inRange(frame, (brightness_threshold, brightness_threshold, brightness_threshold), (255, 255, 255)))
 
                     if similar_image_threshold:
-                        grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        try:
+                            grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        except:
+                            grey = prev_grey
                         if prev_grey is not None:
                             _, absdiff = cv2.threshold(cv2.absdiff(prev_grey, grey), similar_pixel_threshold, 255, cv2.THRESH_BINARY)
                             if np.count_nonzero(absdiff) < similar_image_threshold:
