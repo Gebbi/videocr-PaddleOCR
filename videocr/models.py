@@ -134,3 +134,13 @@ class PredictedSubtitle:
 
     def __repr__(self):
         return '{} - {}. {}'.format(self.index_start, self.index_end, self.text)
+
+class MergeDebug:
+    start_index: int
+    text: str
+    last_text: str
+
+    def __init__(self, start_index: int, text: str, last_text: str):
+        self.start_index = start_index
+        self.text = text
+        self.last_text = last_text

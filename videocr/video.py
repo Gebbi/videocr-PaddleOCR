@@ -7,7 +7,7 @@ import os
 import re
 
 from . import utils
-from .models import PredictedFrames, PredictedSubtitle
+from .models import PredictedFrames, PredictedSubtitle, MergeDebug
 from .opencv_adapter import Capture
 from paddleocr import PaddleOCR
 import ass
@@ -26,11 +26,13 @@ class Video:
     ocr: PaddleOCR
     pred_frames: List[PredictedFrames]
     pred_subs: List[PredictedSubtitle]
+    merge_debug: List[MergeDebug]
 
     def __init__(self, path: str, det_model_dir: str, rec_model_dir: str):
         self.path = path
         self.det_model_dir = det_model_dir
         self.rec_model_dir = rec_model_dir
+        self.merge_debug = []
         with Capture(path) as v:
             self.num_frames = int(v.get(cv2.CAP_PROP_FRAME_COUNT))
             self.fps = v.get(cv2.CAP_PROP_FPS)
@@ -39,12 +41,12 @@ class Video:
 
     def run_ocr(self, use_gpu: bool, lang: str, time_start: str, time_end: str,
                 conf_threshold: int, use_fullframe: bool, brightness_threshold: int, similar_image_threshold: int, similar_pixel_threshold: int, frames_to_skip: int,
-                crop_x: int, crop_y: int, crop_width: int, crop_height: int) -> None:
+                crop_x: int, crop_y: int, crop_width: int, crop_height: int, debug=False) -> None:
         conf_threshold_percent = float(conf_threshold/100)
         self.lang = lang
         self.use_fullframe = use_fullframe
         self.pred_frames = []
-        ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu)
+        ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu, show_log=debug)
 
         ocr_start = utils.get_frame_index(time_start, self.fps) if time_start else 0
         ocr_end = utils.get_frame_index(time_end, self.fps) if time_end else self.num_frames
@@ -91,8 +93,8 @@ class Video:
 
                         prev_grey = grey
 
-                    # check GPU memory every 500 frames, flush if 90 % full
-                    if (use_gpu == True) and (i > last_init + 500):
+                    # check GPU memory every 200 frames, flush if 90 % full
+                    if (use_gpu == True) and (i > last_init + 200):
                         gpu_state = sp.check_output(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv"], text=True)
                         mem = re.findall(r'(\d+) MiB', gpu_state)
                         if int(mem[0]) > int(mem[1]) * 0.9:
@@ -106,8 +108,12 @@ class Video:
                     v.read()
         
 
-    def get_subtitles(self, sim_threshold: int, ass_out: bool, ass_base: str) -> str:
-        self._generate_subtitles(sim_threshold)
+    def get_subtitles(self, sim_threshold: int, ass_out: bool, ass_base: str, debug=False, debug_str=None) -> str:
+        self._generate_subtitles(sim_threshold, debug)
+        if debug and debug_str:
+            with open(f"{debug_str}_merge_debug.txt", 'w+', encoding='utf-8') as f:
+                for md in self.merge_debug:
+                    f.write(f"@{md.start_index}: merged [\"{md.text}\"] with [\"{md.last_text}\"]\n")
         if ass_out:
             with open(ass_base, encoding='utf_8_sig') as f:
                 doc = ass.parse(f)
@@ -117,6 +123,7 @@ class Video:
 
             for i, sub in enumerate(self.pred_subs):
                 pos = ""
+                debug = ""
                 if sub.pos_max_y > self.height - self.height * 0.15:
                     line_type = 'dialogue'
                     line_style = 'Default'
@@ -127,11 +134,13 @@ class Video:
                     line_type = 'comment'
                     line_style = 'Sign'
                     pos = f"{{\\pos({sub.pos_x*(ass_width/self.width)},{sub.pos_y*(ass_height/self.height)})}}"
-                doc.events.add_line(line_type, '0,{},{},{},,0,0,0,,{}{}'.format(
+                if debug:
+                    debug = f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}"
+                doc.events.add_line(line_type, '0,{},{},{},,0,0,0,,{}{}{}'.format(
                     utils.get_timestamp(sub.index_start, self.fps, True),
                     utils.get_timestamp(sub.index_end, self.fps, True),
                     line_style,
-                    pos, sub.text.replace('\n', '\\N'))+f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}")
+                    pos, sub.text.replace('\n', '\\N'), debug))
             return doc
         else:
             return ''.join(
@@ -142,7 +151,7 @@ class Video:
                     sub.text)
                 for i, sub in enumerate(self.pred_subs))
 
-    def _generate_subtitles(self, sim_threshold: int) -> None:
+    def _generate_subtitles(self, sim_threshold: int, debug=False) -> None:
         self.pred_subs = []
 
         if self.pred_frames is None:
@@ -151,10 +160,10 @@ class Video:
 
         max_frame_merge_diff = int(0.09 * self.fps)
         for frame in self.pred_frames:
-            self._append_sub(PredictedSubtitle([frame], sim_threshold), max_frame_merge_diff)
+            self._append_sub(PredictedSubtitle([frame], sim_threshold), max_frame_merge_diff, debug)
         self.pred_subs = [sub for sub in self.pred_subs if len(sub.frames[0].lines) > 0]
 
-    def _append_sub(self, sub: PredictedSubtitle, max_frame_merge_diff: int) -> None:
+    def _append_sub(self, sub: PredictedSubtitle, max_frame_merge_diff: int, debug=False) -> None:
         if len(sub.frames) == 0:
             return
 
@@ -162,6 +171,8 @@ class Video:
         if self.pred_subs:
             last_sub = self.pred_subs[-1]
             if len(last_sub.frames[0].lines) > 0 and sub.index_start - last_sub.index_end <= max_frame_merge_diff and last_sub.is_similar_to(sub):
+                if debug:
+                    self.merge_debug.append(MergeDebug(sub.index_start, sub.text, last_sub.text))
                 del self.pred_subs[-1]
                 sub = PredictedSubtitle(last_sub.frames + sub.frames, sub.sim_threshold)
 
