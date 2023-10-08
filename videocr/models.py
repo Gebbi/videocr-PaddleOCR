@@ -29,6 +29,7 @@ class PredictedFrames:
         self.start_index = index
         self.end_index = index
         self.lines = []
+        self.words = []
 
         total_conf = 0
         word_count = 0
@@ -89,7 +90,14 @@ class PredictedFrames:
             self.confidence = 100
         else:
             self.confidence = 0
-        self.text = '\n'.join(' '.join(word.text for word in line) for line in self.lines)
+        lines = []
+        for line in self.lines:
+            line_words = []
+            for word in line:
+                line_words.append(word.text)
+                self.words.append(word)
+            lines.append(' '.join(line_words))
+        self.text = '\n'.join(lines)
 
     def is_similar_to(self, other: PredictedFrames, threshold=70) -> bool:
         return fuzz.partial_ratio(self.text, other.text) >= threshold
@@ -110,7 +118,14 @@ class PredictedSubtitle:
         self.sim_threshold = sim_threshold
 
         if self.frames:
-            self.text = max(self.frames, key=lambda f: f.confidence).text
+            # prefer lines with more words and similar confidence to fix missing space issues
+            max_word_frame = max(self.frames, key=lambda f: (len(f.words), -f.confidence))
+            max_conf_frame = max(self.frames, key=lambda f: f.confidence)
+            if max_word_frame.confidence >= max_conf_frame.confidence - 1:
+                self.text = max_word_frame.text
+            else:
+                self.text = max_conf_frame.text
+            
             self.pos_min_y = max(self.frames, key=lambda f: f.confidence).pos_min_y
             self.pos_max_y = max(self.frames, key=lambda f: f.confidence).pos_max_y
             self.pos_x = max(self.frames, key=lambda f: f.confidence).pos_x
