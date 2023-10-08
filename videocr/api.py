@@ -57,7 +57,7 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-3
 
         for text in original_text:
             print("Creating ChatGPT request...")
-            prompt = f"[No prose] Fix the following lines (spelling, grammar, wording), written in {lang}. Keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Before the first line, add [START], after the last line, add [END]. The original lines:\n\n{lines}\n\nThe fixed lines:"
+            prompt = f"[No prose] Fix the following lines (spelling, grammar, wording), written in {lang}. Keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Before the first line, add [START], after the last line, add [END]. The original lines:\n\n{text}\n\nThe fixed lines:"
             print(prompt)
             chat = openai.ChatCompletion.create(
                 model=model,
