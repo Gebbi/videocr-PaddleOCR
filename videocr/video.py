@@ -123,7 +123,7 @@ class Video:
 
             for i, sub in enumerate(self.pred_subs):
                 pos = ""
-                debug = ""
+                line_debug = ""
                 if sub.pos_max_y > self.height - self.height * 0.15:
                     line_type = 'dialogue'
                     line_style = 'Default'
@@ -135,12 +135,12 @@ class Video:
                     line_style = 'Sign'
                     pos = f"{{\\pos({sub.pos_x*(ass_width/self.width)},{sub.pos_y*(ass_height/self.height)})}}"
                 if debug:
-                    debug = f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}"
+                    line_debug = f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}"
                 doc.events.add_line(line_type, '0,{},{},{},,0,0,0,,{}{}{}'.format(
                     utils.get_timestamp(sub.index_start, self.fps, True),
                     utils.get_timestamp(sub.index_end, self.fps, True),
                     line_style,
-                    pos, sub.text.replace('\n', '\\N'), debug))
+                    pos, sub.text.replace('\n', '\\N'), line_debug))
             return doc
         else:
             return ''.join(
