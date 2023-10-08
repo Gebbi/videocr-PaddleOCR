@@ -37,7 +37,7 @@ def save_subtitles_to_file(
         else:
             f.write(subs)
 
-def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-3.5-turbo') -> None:
+def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4') -> None:
     openai.api_key = api_key
     sub_name, sub_format = os.path.splitext(subtitle_file)
     if sub_format == '.ass':
@@ -45,26 +45,31 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-3
             doc = ass.parse(f)
         original_text = []
         lines = ""
-        next_split = 100
+        next_split = 50
         for i in range(len(doc.events)):
             event = doc.events[i]
             if i > next_split:
-                next_split += 100
+                next_split += 50
                 original_text.append(lines)
                 lines = ""
             if (type(event) is ass.line.Dialogue) and (event.style != "Sign"):
                 lines += f"{i}|{re.sub(r'{[^}]*}', '', event.text)}\n"
         original_text.append(lines)
 
+        print("Creating ChatGPT request...")
+        system_prompt = f"The user is a script which is taking your output as its input. Therefore you need to keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Absolutely do not merge lines, the line numbers in your response must match the original line numbers with the corresponding text to programmatically match them. Before the first line, add [START], after the last line, add [END]."
         for text in original_text:
-            print("Creating ChatGPT request...")
-            prompt = f"[No prose] Fix the following lines (spelling, grammar, wording), written in {lang}. Keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Before the first line, add [START], after the last line, add [END]. The original lines:\n\n{text}\n\nThe fixed lines:"
-            print(prompt)
+            user_prompt = f"[No prose] Fix the following lines (spelling, grammar, wording), written in {lang}. The original lines:\n\n{text}\n\nThe fixed lines:"
+            print(user_prompt)
             chat = openai.ChatCompletion.create(
                 model=model,
                 messages=[{
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
                     "role": "user",
-                    "content": prompt
+                    "content": user_prompt
                 }]
             )
             response = chat.choices[0]["message"]["content"]
