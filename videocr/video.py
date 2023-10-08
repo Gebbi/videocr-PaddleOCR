@@ -131,7 +131,7 @@ class Video:
                     utils.get_timestamp(sub.index_start, self.fps, True),
                     utils.get_timestamp(sub.index_end, self.fps, True),
                     line_style,
-                    pos, sub.text)+f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}")
+                    pos, sub.text.replace('\n', '\\N'))+f"{{DEBUG: WIDTH={self.width}, HEIGHT={self.height}, POS_X={sub.pos_x}, POS_Y={sub.pos_y}, POS_MIN_Y={sub.pos_min_y}, POS_MAX_Y={sub.pos_max_y}}}")
             return doc
         else:
             return ''.join(
