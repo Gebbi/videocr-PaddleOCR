@@ -49,6 +49,7 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-3
         for i in range(len(doc.events)):
             event = doc.events[i]
             if i > next_split:
+                next_split += 100
                 original_text.append(lines)
                 lines = ""
             if (type(event) is ass.line.Dialogue) and (event.style != "Sign"):
