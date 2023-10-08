@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List
 from dataclasses import dataclass
+from statistics import mean
 from thefuzz import fuzz
 
 @dataclass
@@ -130,7 +131,15 @@ class PredictedSubtitle:
         return 0
 
     def is_similar_to(self, other: PredictedSubtitle) -> bool:
-        return fuzz.partial_ratio(self.text.replace(' ', ''), other.text.replace(' ', '')) >= self.sim_threshold
+        text = self.text.split('\n')
+        other_text = other.text.split('\n')
+        sim = []
+        for i, line in enumerate(text):
+            if len(other_text) >= i+1:
+                sim.append(fuzz.partial_ratio(line.replace(' ', ''), other_text[i].replace(' ', '')))
+            else:
+                sim.append(0)
+        return mean(sim) >= self.sim_threshold
 
     def __repr__(self):
         return '{} - {}. {}'.format(self.index_start, self.index_end, self.text)
