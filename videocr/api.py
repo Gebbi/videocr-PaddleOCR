@@ -37,7 +37,7 @@ def save_subtitles_to_file(
         else:
             f.write(subs)
 
-def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4') -> None:
+def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4', start_at=0, end_at=None) -> None:
     openai.api_key = api_key
     sub_name, sub_format = os.path.splitext(subtitle_file)
     if sub_format == '.ass':
@@ -45,8 +45,10 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
             doc = ass.parse(f)
         original_text = []
         lines = ""
-        next_split = 50
+        next_split = 50 + start_at
         for i in range(len(doc.events)):
+            if (i < start_at) or (end_at and i > end_at):
+                continue
             event = doc.events[i]
             if i > next_split:
                 next_split += 50
@@ -82,6 +84,9 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
                     line = re.match(r'^(\d+)\|(.*)$', fix)
                     if line:
                         doc.events[int(line.group(1))].text = line.group(2)
+
+            with open(f"{sub_name}_fixed.ass", 'w+', encoding='utf-8') as f:
+                doc.dump_file(f)
 
         with open(f"{sub_name}_fixed.ass", 'w+', encoding='utf-8') as f:
             doc.dump_file(f)
