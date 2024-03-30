@@ -37,7 +37,7 @@ def save_subtitles_to_file(
         else:
             f.write(subs)
 
-def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4', openai_base_url='https://api.openai.com/v1', start_at=0, end_at=None) -> None:
+def fix_subtitles(api_key: str, subtitle_file: str, split=50, lang='english', model='gpt-4', openai_base_url='https://api.openai.com/v1', start_at=0, end_at=None) -> None:
     client = OpenAI(
       base_url=openai_base_url,
       api_key=api_key,
@@ -48,13 +48,13 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
             doc = ass.parse(f)
         original_text = []
         lines = ""
-        next_split = 50 + start_at
+        next_split = split + start_at
         for i in range(len(doc.events)):
             if (i < start_at) or (end_at and i > end_at):
                 continue
             event = doc.events[i]
             if i > next_split:
-                next_split += 50
+                next_split += split
                 original_text.append(lines)
                 lines = ""
             if (type(event) is ass.line.Dialogue) and (event.style != "Sign"):
@@ -63,7 +63,8 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
 
         print("Creating ChatGPT request...")
         system_prompt = f"The user is a script which is taking your output as its input. Therefore you need to keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Absolutely do not merge lines, the line numbers in your response must match the original line numbers with the corresponding text to programmatically match them. Before the first line, add [START], after the last line, add [END]."
-        for text in original_text:
+
+        def ai_fix_lines(text):
             user_prompt = f"[No prose] Fix the following lines (spelling, grammar, possibly wording), written in {lang}. The lines are entertainment dialogue, so keep correct casual language unchanged. The original lines:\n\n{text}\n\nThe fixed lines:"
             print(user_prompt)
             chat = client.chat.completions.create(
@@ -79,7 +80,10 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
             )
             response = chat.choices[0].message.content
             print(response)
+            
+            return response
 
+        def fix_in_doc(response):
             fixed_lines = re.search(r'\[START\](.*?)\[END\]', response, re.DOTALL)
             if fixed_lines:
                 fixes = fixed_lines.group(1)
@@ -87,6 +91,20 @@ def fix_subtitles(api_key: str, subtitle_file: str, lang='english', model='gpt-4
                     line = re.match(r'^(\d+)\|(.*)$', fix)
                     if line:
                         doc.events[int(line.group(1))].text = line.group(2)
+
+        for text in original_text:
+            try:
+                response = ai_fix_lines(text)
+                fix_in_doc(response)
+            except:
+                print("Got content moderation warning from model. Trying lines one by one.")
+                text_split = text.splitlines()
+                for line in text_split:
+                    try:
+                        response = ai_fix_lines(line)
+                        fix_in_doc(response)
+                    except:
+                        fix_in_doc(f"[START]\n{line}{{[COULD NOT FIX]}}\n[END]")            
 
             with open(f"{sub_name}_fixed.ass", 'w+', encoding='utf-8') as f:
                 doc.dump_file(f)
