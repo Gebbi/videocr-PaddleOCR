@@ -7,7 +7,7 @@ import os
 import re
 
 from . import utils
-from .models import PredictedFrames, PredictedSubtitle, MergeDebug
+from .models import PredictedFrames, PredictedSubtitle, PredictedSubtitleGroup, MergeDebug
 from .opencv_adapter import Capture
 from paddleocr import PaddleOCR
 import ass
@@ -68,6 +68,7 @@ class Video:
             predicted_frames = None
             modulo = frames_to_skip + 1
             last_init = 0
+            skipped_frames = 0
             for i in range(num_ocr_frames):
                 print(f"Frame #{i}")
                 if i % modulo == 0:
@@ -82,19 +83,20 @@ class Video:
                     if brightness_threshold:
                         frame = cv2.bitwise_and(frame, frame, mask=cv2.inRange(frame, (brightness_threshold, brightness_threshold, brightness_threshold), (255, 255, 255)))
 
-                    if similar_image_threshold:
-                        try:
-                            grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                        except:
-                            grey = prev_grey
-                        if prev_grey is not None:
-                            _, absdiff = cv2.threshold(cv2.absdiff(prev_grey, grey), similar_pixel_threshold, 255, cv2.THRESH_BINARY)
-                            if np.count_nonzero(absdiff) < similar_image_threshold:
-                                predicted_frames.end_index = i + ocr_start
-                                prev_grey = grey
-                                continue
+                    # if similar_image_threshold:
+                    #     try:
+                    #         grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    #     except:
+                    #         grey = prev_grey
+                    #     if prev_grey is not None:
+                    #         _, absdiff = cv2.threshold(cv2.absdiff(prev_grey, grey), similar_pixel_threshold, 255, cv2.THRESH_BINARY)
+                    #         if np.count_nonzero(absdiff) < similar_image_threshold:
+                    #             # predicted_frames.start_index = i + ocr_start
+                    #             skipped_frames += 2
+                    #             prev_grey = grey
+                    #             continue
 
-                        prev_grey = grey
+                    #     prev_grey = grey
 
                     # check GPU memory every 200 frames, flush if 90 % full
                     if (use_gpu == True) and (i > last_init + 200):
@@ -105,7 +107,8 @@ class Video:
                             ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu)
                         last_init = i
                     
-                    predicted_frames = PredictedFrames(i + ocr_start, ocr.ocr(frame, cls=False), conf_threshold_percent)
+                    predicted_frames = PredictedFrames(i + ocr_start - skipped_frames, ocr.ocr(frame, cls=False), conf_threshold_percent)
+                    skipped_frames = 0
                     self.pred_frames.append(predicted_frames)
                 else:
                     v.read()
@@ -127,10 +130,10 @@ class Video:
             for i, sub in enumerate(self.pred_subs):
                 pos = ""
                 line_debug = ""
-                if sub.pos_max_y > self.height - self.height * 0.15:
+                if sub.pos_max_y > self.height - self.height * 0.15 or not self.use_fullframe:
                     line_type = 'dialogue'
                     line_style = 'Default'
-                elif sub.pos_min_y < self.height * 0.15:
+                elif sub.pos_min_y < self.height * 0.15 and self.use_fullframe:
                     line_type = 'dialogue'
                     line_style = 'Top'
                 else:
@@ -156,27 +159,47 @@ class Video:
 
     def _generate_subtitles(self, sim_threshold: int, debug=False) -> None:
         self.pred_subs = []
+        subtitle_group = None
 
         if self.pred_frames is None:
             raise AttributeError(
                 'Please call self.run_ocr() first to perform ocr on frames')
 
-        max_frame_merge_diff = int(0.09 * self.fps)
         for frame in self.pred_frames:
-            self._append_sub(PredictedSubtitle([frame], sim_threshold), max_frame_merge_diff, debug)
-        self.pred_subs = [sub for sub in self.pred_subs if len(sub.frames[0].lines) > 0]
+            temp_pred_subs = []
+            for window in frame.windows:
+                temp_pred_subs.append(PredictedSubtitle(window.text, window.pos_min_y, window.pos_max_y, window.pos_x, window.pos_y, frame.start_index, frame.start_index + 1, sim_threshold, window))
 
-    def _append_sub(self, sub: PredictedSubtitle, max_frame_merge_diff: int, debug=False) -> None:
-        if len(sub.frames) == 0:
-            return
+            if subtitle_group is None:
+                subtitle_group = PredictedSubtitleGroup(temp_pred_subs)
+            else:
+                if not subtitle_group.update(PredictedSubtitleGroup(temp_pred_subs), self.fps):
+                    for pred_sub in subtitle_group.subtitles:
+                        self.pred_subs.append(pred_sub)
+                    subtitle_group = PredictedSubtitleGroup(temp_pred_subs)
+
+
+
+        # max_frame_merge_diff = int(0.09 * self.fps)
+        # for frame in self.pred_frames:
+            # for window in frame.windows:
+                # self.pred_subs.append(PredictedSubtitle([window], ))
+            # self._append_sub(PredictedSubtitle([frame], sim_threshold), max_frame_merge_diff, debug)
+        # self.pred_subs = [sub for sub in self.pred_subs if len(sub.frames[0].lines) > 0]
+
+    # def _append_sub(self, sub: PredictedSubtitle, max_frame_merge_diff: int, debug=False) -> None:
+        # if len(sub.frames) == 0:
+            # return
+
+
 
         # merge new sub to the last subs if they are not empty, similar and within 0.09 seconds apart
-        if self.pred_subs:
-            last_sub = self.pred_subs[-1]
-            if len(last_sub.frames[0].lines) > 0 and sub.index_start - last_sub.index_end <= max_frame_merge_diff and last_sub.is_similar_to(sub):
-                if debug:
-                    self.merge_debug.append(MergeDebug(sub.index_start, sub.text, last_sub.text))
-                del self.pred_subs[-1]
-                sub = PredictedSubtitle(last_sub.frames + sub.frames, sub.sim_threshold)
+        # if self.pred_subs:
+        #     last_sub = self.pred_subs[-1]
+        #     if len(last_sub.frames[0].lines) > 0 and sub.index_start - last_sub.index_end <= max_frame_merge_diff and last_sub.is_similar_to(sub):
+        #         if debug:
+        #             self.merge_debug.append(MergeDebug(sub.index_start, sub.text, last_sub.text))
+        #         del self.pred_subs[-1]
+        #         sub = PredictedSubtitle(last_sub.frames + sub.frames, sub.sim_threshold)
 
-        self.pred_subs.append(sub)
+        # self.pred_subs.append(sub)

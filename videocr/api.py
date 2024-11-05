@@ -58,11 +58,12 @@ def fix_subtitles(api_key: str, subtitle_file: str, split=50, lang='english', mo
                 original_text.append(lines)
                 lines = ""
             if (type(event) is ass.line.Dialogue) and (event.style != "Sign"):
-                lines += f"{i}|{re.sub(r'{[^}]*}', '', event.text)}\n"
+                pattern = r'{(?!\\)[^}]*}'
+                lines += f"{i}|{re.sub(pattern, '', event.text)}\n"
         original_text.append(lines)
 
         print("Creating ChatGPT request...")
-        system_prompt = f"The user is a script which is taking your output as its input. Therefore you need to keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Absolutely do not merge lines, the line numbers in your response must match the original line numbers with the corresponding text to programmatically match them. Before the first line, add [START], after the last line, add [END]."
+        system_prompt = f"The user is a script which is taking your output as its input. Therefore you need to keep this line format without changing the line number: number|text. Keep any occurence of \\N at the same position. Absolutely do not merge lines, the line numbers in your response must match the original line numbers with the corresponding text to programmatically match them. Keep everything between braces unchanged. Before the first line, add [START], after the last line, add [END]."
 
         def ai_fix_lines(text):
             user_prompt = f"[No prose] Fix the following lines (spelling, grammar, possibly wording), written in {lang}. The lines are entertainment dialogue, so keep correct casual language unchanged. The original lines:\n\n{text}\n\nThe fixed lines:"
