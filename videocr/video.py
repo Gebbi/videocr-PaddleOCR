@@ -107,9 +107,11 @@ class Video:
                             ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu)
                         last_init = i
                     
-                    predicted_frames = PredictedFrames(i + ocr_start - skipped_frames, ocr.ocr(frame, cls=False), conf_threshold_percent)
-                    skipped_frames = 0
-                    self.pred_frames.append(predicted_frames)
+                    pred_data = ocr.ocr(frame, cls=False)
+                    if pred_data[0] is not None:
+                        predicted_frames = PredictedFrames(i + ocr_start - skipped_frames, pred_data, conf_threshold_percent)
+                        skipped_frames = 0
+                        self.pred_frames.append(predicted_frames)
                 else:
                     v.read()
         
