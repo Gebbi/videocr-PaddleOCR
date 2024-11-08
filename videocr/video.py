@@ -177,29 +177,3 @@ class Video:
                     for pred_sub in subtitle_group.subtitles:
                         self.pred_subs.append(pred_sub)
                     subtitle_group = PredictedSubtitleGroup(temp_pred_subs)
-
-
-
-        # max_frame_merge_diff = int(0.09 * self.fps)
-        # for frame in self.pred_frames:
-            # for window in frame.windows:
-                # self.pred_subs.append(PredictedSubtitle([window], ))
-            # self._append_sub(PredictedSubtitle([frame], sim_threshold), max_frame_merge_diff, debug)
-        # self.pred_subs = [sub for sub in self.pred_subs if len(sub.frames[0].lines) > 0]
-
-    # def _append_sub(self, sub: PredictedSubtitle, max_frame_merge_diff: int, debug=False) -> None:
-        # if len(sub.frames) == 0:
-            # return
-
-
-
-        # merge new sub to the last subs if they are not empty, similar and within 0.09 seconds apart
-        # if self.pred_subs:
-        #     last_sub = self.pred_subs[-1]
-        #     if len(last_sub.frames[0].lines) > 0 and sub.index_start - last_sub.index_end <= max_frame_merge_diff and last_sub.is_similar_to(sub):
-        #         if debug:
-        #             self.merge_debug.append(MergeDebug(sub.index_start, sub.text, last_sub.text))
-        #         del self.pred_subs[-1]
-        #         sub = PredictedSubtitle(last_sub.frames + sub.frames, sub.sim_threshold)
-
-        # self.pred_subs.append(sub)
