@@ -3,6 +3,7 @@ from typing import List
 from dataclasses import dataclass
 from statistics import mean
 from thefuzz import fuzz
+import torch
 
 @dataclass
 class PredictedText:
@@ -155,6 +156,7 @@ class PredictedSubtitleGroup:
                         other.text = max_conf_sub.text
                         other.window.words = max_conf_sub.window.words
                         other.window.confidence = max_conf_sub.window.confidence
+                    other.text_options.add(sub.text)
                     merged = True
             if not merged:
                 orphans.append(sub)
@@ -164,10 +166,10 @@ class PredictedSubtitleGroup:
         else:
             return False
 
-
 class PredictedSubtitle:
     sim_threshold: int
     text: str
+    text_options: set[str]
     pos_min_y: int
     pos_max_y: int
     pos_x: int
@@ -179,6 +181,7 @@ class PredictedSubtitle:
     def __init__(self, text, pos_min_y, pos_max_y, pos_x, pos_y, index_start, index_end, sim_threshold: int, window: PredictedTextWindow):
         self.sim_threshold = sim_threshold
         self.text = text
+        self.text_options = set()
         self.pos_min_y = pos_min_y
         self.pos_max_y = pos_max_y
         self.pos_x = pos_x

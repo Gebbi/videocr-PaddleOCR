@@ -5,17 +5,43 @@ import numpy as np
 import subprocess as sp
 import os
 import re
+from itertools import product
 
 from . import utils
 from .models import PredictedFrames, PredictedSubtitle, PredictedSubtitleGroup, MergeDebug
 from .opencv_adapter import Capture
 from paddleocr import PaddleOCR
 import ass
+import enchant
 
+from transformers import GPT2LMHeadModel, GPT2Tokenizer, AutoTokenizer, AutoModelForCausalLM
+import torch
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+class Dictionary:
+    def __init__(self, dict_lang='en'):
+        match dict_lang:
+            case 'de':
+                self.model_name = "dbmdz/german-gpt2"
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                print("Dictionary language set to German")
+            case _:
+                self.model_name = "gpt2"
+                self.model = GPT2LMHeadModel.from_pretrained(self.model_name)
+                self.tokenizer = GPT2Tokenizer.from_pretrained(self.model_name)
+                print("Dictionary language set to English")
+        self.model.to(device)
+        if device == "cuda":
+            print("Using GPU for dictionary")
+        else:
+            print("Using CPU for dictionary")
 
 class Video:
     path: str
     lang: str
+    dict_lang: str
     use_fullframe: bool
     det_model_dir: str
     rec_model_dir: str
@@ -39,13 +65,16 @@ class Video:
             self.width = int(v.get(cv2.CAP_PROP_FRAME_WIDTH))
             self.height = int(v.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    def run_ocr(self, use_gpu: bool, lang: str, time_start: str, time_end: str,
+    def run_ocr(self, use_gpu: bool, lang: str, dict_lang: str, time_start: str, time_end: str,
                 conf_threshold: int, use_fullframe: bool, brightness_threshold: int, similar_image_threshold: int, similar_pixel_threshold: int, frames_to_skip: int,
                 crop_x: int, crop_y: int, crop_width: int, crop_height: int, debug=False) -> None:
         conf_threshold_percent = float(conf_threshold/100)
         self.lang = lang
+        self.dict_lang = dict_lang
         self.use_fullframe = use_fullframe
         self.pred_frames = []
+        print(f"OCR language: {lang}, Dictionary language: {dict_lang}")
+
         ocr = PaddleOCR(lang=self.lang, rec_model_dir=self.rec_model_dir, det_model_dir=self.det_model_dir, use_gpu=use_gpu, show_log=debug)
 
         ocr_start = utils.get_frame_index(time_start, self.fps) if time_start else 0
@@ -179,3 +208,77 @@ class Video:
                     for pred_sub in subtitle_group.subtitles:
                         self.pred_subs.append(pred_sub)
                     subtitle_group = PredictedSubtitleGroup(temp_pred_subs)
+
+        dictionary = Dictionary(self.dict_lang)
+
+        print("Making text decisions...")
+        for sub in self.pred_subs:
+            if len(sub.text_options) > 1:
+                print(f'Text options:')
+                print("\n>>> ".join(sub.text_options))
+                best_text = sorted(
+                    sub.text_options, 
+                    key=lambda sentence: self._calculate_perplexity(sentence, dictionary)
+                )[0]
+                print(f'DECISION: {best_text}')
+                sub.text = best_text
+
+        if self.dict_lang == "de":
+            print("Making umlaut decisions...")
+            # https://github.com/LibreOffice/dictionaries/blob/master/de/de_DE_frami.aff
+            # https://github.com/LibreOffice/dictionaries/blob/master/de/de_DE_frami.dic
+            # -> site-packages\enchant\data\mingw64\share\enchant\hunspell
+            sc = enchant.Dict('de_DE')
+            for sub in self.pred_subs:
+                text = sub.text
+                fixed_sub = []
+                for line in text.split("\n"):
+                    fixed_line = []
+                    words = line.split()
+                    for i, word in enumerate(words):
+                        word_variants = self._generate_umlaut_variations(word)
+                        if len(word_variants) > 1:
+                            sentence_variants = []
+                            for variant in word_variants:
+                                temp_sentence = ' '.join(
+                                    words[:i] + [variant] + words[i+1:]
+                                )
+                                sentence_variants.append(
+                                    (variant, self._calculate_perplexity(temp_sentence, dictionary))
+                                )
+                            best_word = min(sentence_variants, key=lambda x: x[1])[0]
+                            if sc.check(re.sub(r'[^a-zA-ZäöüÄÖÜß]', '', best_word)):
+                                fixed_line.append(best_word)
+                            else:
+                                fixed_line.append(word)
+                        else:
+                            fixed_line.append(word)
+                    fixed_sub.append(' '.join(fixed_line))
+                sub.text = '\n'.join(fixed_sub)
+                if text != sub.text:
+                    print(f"Fixed umlauts:\n{text}\n>>> {sub.text}")
+
+    def _calculate_perplexity(self, sentence, dictionary):
+        inputs = dictionary.tokenizer(sentence, return_tensors="pt").to(device)
+        with torch.no_grad():
+            outputs = dictionary.model(**inputs, labels=inputs["input_ids"])
+        loss = outputs.loss
+        return torch.exp(loss).item()
+
+    def _generate_umlaut_variations(self, word):
+        umlaut_replacements = {
+            'a': ['a', 'ä'], 'o': ['o', 'ö'], 'u': ['u', 'ü'],
+            'A': ['A', 'Ä'], 'O': ['O', 'Ö'], 'U': ['U', 'Ü'],
+            'B': ['B', 'ß']
+        }
+
+        char_variations = []
+        for char in word:
+            if char in umlaut_replacements:
+                char_variations.append(umlaut_replacements[char])
+            else:
+                char_variations.append([char])
+
+        variations = [''.join(comb) for comb in product(*char_variations)]
+
+        return variations

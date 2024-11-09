@@ -11,8 +11,11 @@ def get_subtitles(
         brightness_threshold=None, similar_image_threshold=100, similar_pixel_threshold=25, frames_to_skip=1,
         crop_x=None, crop_y=None, crop_width=None, crop_height=None, debug=False, debug_str=None) -> str:
     
+    dict_lang = lang
+    if lang == 'de':
+        lang = 'en'
     v = Video(video_path, det_model_dir, rec_model_dir)
-    v.run_ocr(use_gpu, lang, time_start, time_end, conf_threshold, use_fullframe,
+    v.run_ocr(use_gpu, lang, dict_lang, time_start, time_end, conf_threshold, use_fullframe,
         brightness_threshold, similar_image_threshold, similar_pixel_threshold, frames_to_skip,
         crop_x, crop_y, crop_width, crop_height, debug)
     return v.get_subtitles(sim_threshold, ass_out, ass_base, debug, debug_str)
