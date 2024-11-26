@@ -234,26 +234,32 @@ class Video:
                 fixed_sub = []
                 for line in text.split("\n"):
                     fixed_line = []
-                    words = line.split()
+                    words = re.split(r'(\s+|-)', line)
                     for i, word in enumerate(words):
+                        if not word.strip() or re.fullmatch(r'\s+|-', word):
+                            fixed_line.append(word)
+                            continue
                         word_variants = self._generate_umlaut_variations(word)
+                        word_variants = [
+                            variant for variant in word_variants
+                            if (cleaned_variant := re.sub(r'[^a-zA-ZäöüÄÖÜß]', '', variant)) and sc.check(cleaned_variant)
+                        ]
                         if len(word_variants) > 1:
                             sentence_variants = []
                             for variant in word_variants:
-                                temp_sentence = ' '.join(
+                                temp_sentence = ''.join(
                                     words[:i] + [variant] + words[i+1:]
                                 )
                                 sentence_variants.append(
                                     (variant, self._calculate_perplexity(temp_sentence, dictionary))
                                 )
                             best_word = min(sentence_variants, key=lambda x: x[1])[0]
-                            if sc.check(re.sub(r'[^a-zA-ZäöüÄÖÜß]', '', best_word)):
-                                fixed_line.append(best_word)
-                            else:
-                                fixed_line.append(word)
+                            fixed_line.append(best_word)
+                        elif word_variants:
+                            fixed_line.append(word_variants[0])
                         else:
                             fixed_line.append(word)
-                    fixed_sub.append(' '.join(fixed_line))
+                    fixed_sub.append(''.join(fixed_line))
                 sub.text = '\n'.join(fixed_sub)
                 if text != sub.text:
                     print(f"Fixed umlauts:\n{text}\n>>> {sub.text}")
